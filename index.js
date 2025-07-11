@@ -33,19 +33,19 @@ async function run() {
 
 
         // API: get all not adopted pets
-        // app.get("/api/pets", async (req, res) => {
-        //     try {
-        //         const pets = await petsCollection
-        //             .find({ adopted: false })
-        //             .sort({ createdAt: -1 })
-        //             .toArray();
+        app.get("/api/pets", async (req, res) => {
+            try {
+                const pets = await petsCollection
+                    .find({ adopted: false })
+                    .sort({ createdAt: -1 })
+                    .toArray();
 
-        //         res.send(pets);
-        //     } catch (err) {
-        //         console.error(err);
-        //         res.status(500).send({ message: "Failed to fetch pets" });
-        //     }
-        // });
+                res.send(pets);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: "Failed to fetch pets" });
+            }
+        });
 
         app.post("/api/pets", async (req, res) => {
             try {
