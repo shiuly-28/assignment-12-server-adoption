@@ -26,10 +26,12 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
-        // await client.connect();
+        await client.connect();
 
         const usersCollection = client.db("petAdopton").collection("users");
         const petsCollection = client.db("petAdopton").collection("pets");
+        const adoptionsCollection = client.db("petAdopton").collection("adoptions");
+        const donationCollection = client.db("petAdopton").collection("donations");
 
 
         // API: get all not adopted pets
@@ -46,6 +48,39 @@ async function run() {
                 res.status(500).send({ message: "Failed to fetch pets" });
             }
         });
+
+        //  Get Donations with Pagination + Sort by Newest First
+        app.get("/donations", async (req, res) => {
+            try {
+                const page = parseInt(req.query.page) || 1;
+                const limit = parseInt(req.query.limit) || 6;
+                const skip = (page - 1) * limit;
+
+                const result = await donationCollection
+                    .find({})
+                    .sort({ createdAt: -1 }) // latest first
+                    .skip(skip)
+                    .limit(limit)
+                    .toArray();
+
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ error: "Failed to fetch donation campaigns" });
+            }
+        });
+
+        // POST /donations route
+        app.post("/donations", async (req, res) => {
+            try {
+                const donation = req.body;
+                donation.createdAt = new Date(); // Add timestamp manually
+                const result = await donationCollection.insertOne(donation);
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ error: "Failed to add donation campaign" });
+            }
+        });
+
 
         app.post("/api/pets", async (req, res) => {
             try {
@@ -78,6 +113,19 @@ async function run() {
             const user = req.body;
             const result = await usersCollection.insertOne(user);
             res.send(result);
+        });
+
+        // POST route: Save adoption form data
+        app.post("/adoptions", async (req, res) => {
+            const adoptionData = req.body;
+            console.log("Received adoption request:", adoptionData);
+
+            try {
+                const result = await adoptionsCollection.insertOne(adoptionData);
+                res.status(201).send({ message: "Adoption request submitted", insertedId: result.insertedId });
+            } catch (error) {
+                res.status(500).send({ error: "Failed to submit adoption request" });
+            }
         });
 
         // Send a ping to confirm a successful connection
