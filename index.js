@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 dotenv.config();
 
@@ -32,15 +32,41 @@ async function run() {
         const petsCollection = client.db("petAdopton").collection("pets");
         const adoptionsCollection = client.db("petAdopton").collection("adoptions");
         const donationCollection = client.db("petAdopton").collection("donations");
-
+        const myPetsCollection = client.db("petAdopton").collection("mePets");
 
         // API: get all not adopted pets
-        app.get("/api/pets", async (req, res) => {
+        app.get("/pets", async (req, res) => {
             try {
                 const pets = await petsCollection
                     .find({ adopted: false })
                     .sort({ createdAt: -1 })
                     .toArray();
+
+                res.send(pets);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: "Failed to fetch pets" });
+            }
+        });
+
+        app.get('/api/mypets', async (req, res) => {
+            const userEmail = req.query.email;
+            console.log("🎯 Email from frontend:", userEmail);
+
+            try {
+                const pets = await petsCollection.find({ userEmail }).toArray(); // ✅ mePets না, petsCollection
+                res.send(pets);
+            } catch (error) {
+                console.error("❌ Error fetching pets:", error);
+                res.status(500).send({ message: "Failed to fetch pets", error });
+            }
+        });
+
+        app.get("/pets/:id", async (req, res) => {
+            try {
+                const id = req.params.id
+                const pets = await petsCollection
+                    .findOne({ _id: new ObjectId(id) })
 
                 res.send(pets);
             } catch (err) {
@@ -71,18 +97,14 @@ async function run() {
 
         // POST /donations route
         app.post("/donations", async (req, res) => {
-            try {
-                const donation = req.body;
-                donation.createdAt = new Date(); // Add timestamp manually
-                const result = await donationCollection.insertOne(donation);
-                res.send(result);
-            } catch (error) {
-                res.status(500).send({ error: "Failed to add donation campaign" });
-            }
+            const donation = req.body;
+            donation.createdAt = new Date();
+            const result = await donationCollection.insertOne(donation);
+            res.send(result);
         });
 
 
-        app.post("/api/pets", async (req, res) => {
+        app.post("/pets", async (req, res) => {
             try {
                 const pet = req.body;
                 pet.createdAt = new Date().toISOString();
@@ -116,17 +138,38 @@ async function run() {
         });
 
         // POST route: Save adoption form data
-        app.post("/adoptions", async (req, res) => {
+        app.post("/api/adoptions", async (req, res) => {
             const adoptionData = req.body;
-            console.log("Received adoption request:", adoptionData);
 
             try {
                 const result = await adoptionsCollection.insertOne(adoptionData);
-                res.status(201).send({ message: "Adoption request submitted", insertedId: result.insertedId });
+                res.status(201).send({
+                    message: "Adoption request submitted successfully!",
+                    insertedId: result.insertedId,
+                });
             } catch (error) {
+                console.error("Failed to insert adoption request:", error);
                 res.status(500).send({ error: "Failed to submit adoption request" });
             }
         });
+
+
+        app.put('/api/pets/:id', async (req, res) => {
+            const id = req.params.id;
+            const updatedData = req.body;
+
+            try {
+                const result = await petCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: updatedData }
+                );
+                res.send(result);
+            } catch (error) {
+                console.error("Failed to update pet", error);
+                res.status(500).send({ message: "Failed to update pet" });
+            }
+        });
+
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
