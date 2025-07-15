@@ -33,6 +33,7 @@ async function run() {
         const adoptionsCollection = client.db("petAdopton").collection("adoptions");
         const donationCollection = client.db("petAdopton").collection("donations");
         const myPetsCollection = client.db("petAdopton").collection("mePets");
+        const adoptionCollection = client.db("petAdopton").collection("adoption");
 
         // API: get all not adopted pets
         app.get("/pets", async (req, res) => {
@@ -49,18 +50,53 @@ async function run() {
             }
         });
 
-        app.get('/api/mypets', async (req, res) => {
-            const userEmail = req.query.email;
-            console.log("🎯 Email from frontend:", userEmail);
+
+        // ✅ route: GET /api/mypets?email=user@example.com
+        app.get("/mypets", async (req, res) => {
 
             try {
-                const pets = await petsCollection.find({ userEmail }).toArray(); // ✅ mePets না, petsCollection
-                res.send(pets);
+
+                const email = req.query.email;
+                console.log(email);
+                if (!email) {
+                    return res.status(400).send({ message: "Email is required" });
+                }
+
+                const result = await petsCollection.find({ ownerEmail: email }).toArray();
+                res.send(result);
             } catch (error) {
-                console.error("❌ Error fetching pets:", error);
-                res.status(500).send({ message: "Failed to fetch pets", error });
+                console.error("Failed to fetch pets", error);
+                res.status(500).send({ message: "Failed to load pets" });
             }
         });
+
+        app.delete("/pets/:id", async (req, res) => {
+            try {
+                const id = req.params.id;
+                const result = await myPetsCollection.deleteOne({ _id: new ObjectId(id) });
+                res.send(result);
+            } catch (error) {
+                console.error("Failed to delete pet", error);
+                res.status(500).send({ message: "Failed to delete pet" });
+            }
+        });
+
+        // ✅ route: PATCH /api/pets/:id
+        app.patch('/api/pets/:id', async (req, res) => {
+            const id = req.params.id;
+            const updateDoc = {
+                $set: {
+                    adopted: true,
+                },
+            };
+
+            const result = await myPetsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                updateDoc
+            );
+            res.send(result);
+        });
+
 
         app.get("/pets/:id", async (req, res) => {
             try {
@@ -75,25 +111,53 @@ async function run() {
             }
         });
 
+        // adoptionrequest
+        app.get("/api/adoption-requests", async (req, res) => {
+            const ownerEmail = req.query.ownerEmail;
+            const result = await adoptionCollection
+                .find({ petOwnerEmail: ownerEmail })
+                .toArray();
+            res.send(result);
+        });
+
+        app.delete("/api/adoption-requests/:id/reject", async (req, res) => {
+            const id = req.params.id;
+            const result = await adoptionCollection.deleteOne({ _id: new ObjectId(id) });
+            res.send(result);
+        });
+
+        app.patch("/api/adoption-requests/:id/accept", async (req, res) => {
+            const id = req.params.id;
+            const result = await adoptionCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { status: "accepted" } }
+            );
+            res.send(result);
+        });
+
         //  Get Donations with Pagination + Sort by Newest First
         app.get("/donations", async (req, res) => {
             try {
+                const email = req.query.email;
                 const page = parseInt(req.query.page) || 1;
                 const limit = parseInt(req.query.limit) || 6;
                 const skip = (page - 1) * limit;
 
+                const query = email ? { userEmail: email } : {};
+
                 const result = await donationCollection
-                    .find({})
-                    .sort({ createdAt: -1 }) // latest first
+                    .find(query)
+                    .sort({ createdAt: -1 })
                     .skip(skip)
                     .limit(limit)
                     .toArray();
 
-                res.send(result);
+                res.send(result); // ✅ sends array
             } catch (error) {
                 res.status(500).send({ error: "Failed to fetch donation campaigns" });
             }
         });
+
 
         // POST /donations route
         app.post("/donations", async (req, res) => {
@@ -102,6 +166,7 @@ async function run() {
             const result = await donationCollection.insertOne(donation);
             res.send(result);
         });
+
 
 
         app.post("/pets", async (req, res) => {
@@ -154,19 +219,19 @@ async function run() {
         });
 
 
-        app.put('/api/pets/:id', async (req, res) => {
+        app.put('/pets/:id', async (req, res) => {
             const id = req.params.id;
             const updatedData = req.body;
 
             try {
-                const result = await petCollection.updateOne(
+                const result = await petsCollection.updateOne(
                     { _id: new ObjectId(id) },
                     { $set: updatedData }
                 );
                 res.send(result);
             } catch (error) {
                 console.error("Failed to update pet", error);
-                res.status(500).send({ message: "Failed to update pet" });
+                res.status(500).send({ message: "Failed to update pet", error: error.message });
             }
         });
 
