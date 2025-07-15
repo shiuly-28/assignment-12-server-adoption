@@ -152,12 +152,11 @@ async function run() {
                     .limit(limit)
                     .toArray();
 
-                res.send(result); // ✅ sends array
+                res.send(result);
             } catch (error) {
                 res.status(500).send({ error: "Failed to fetch donation campaigns" });
             }
         });
-
 
         // POST /donations route
         app.post("/donations", async (req, res) => {
@@ -166,8 +165,6 @@ async function run() {
             const result = await donationCollection.insertOne(donation);
             res.send(result);
         });
-
-
 
         app.post("/pets", async (req, res) => {
             try {
