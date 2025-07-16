@@ -136,27 +136,33 @@ async function run() {
         });
 
         //  Get Donations with Pagination + Sort by Newest First
+
+
         app.get("/donations", async (req, res) => {
             try {
-                const email = req.query.email;
                 const page = parseInt(req.query.page) || 1;
                 const limit = parseInt(req.query.limit) || 6;
                 const skip = (page - 1) * limit;
+                const sort = req.query.sort === "desc" ? -1 : 1;
 
-                const query = email ? { userEmail: email } : {};
+                const total = await donationCollection.countDocuments();
 
-                const result = await donationCollection
-                    .find(query)
-                    .sort({ createdAt: -1 })
+                const campaigns = await donationCollection
+                    .find()
+                    .sort({ createdAt: sort }) // latest first
                     .skip(skip)
                     .limit(limit)
                     .toArray();
 
-                res.send(result);
+                const hasMore = total > page * limit;
+
+                res.send({ campaigns, hasMore });
             } catch (error) {
-                res.status(500).send({ error: "Failed to fetch donation campaigns" });
+                console.error("Error in /donations route:", error);
+                res.status(500).json({ message: "Server error" });
             }
         });
+
 
         // POST /donations route
         app.post("/donations", async (req, res) => {
@@ -231,6 +237,24 @@ async function run() {
                 res.status(500).send({ message: "Failed to update pet", error: error.message });
             }
         });
+
+        app.delete("/api/refund/:id", async (req, res) => {
+            const id = req.params.id;
+
+            try {
+                const result = await donationCollection.deleteOne({ _id: new ObjectId(id) });
+
+                if (result.deletedCount === 0) {
+                    return res.status(404).json({ message: "Donation not found" });
+                }
+
+                res.json({ message: "Donation deleted successfully" });
+            } catch (err) {
+                console.error("Error deleting donation:", err);
+                res.status(500).json({ message: "Internal server error" });
+            }
+        });
+
 
 
         // Send a ping to confirm a successful connection
