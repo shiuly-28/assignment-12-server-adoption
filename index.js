@@ -33,7 +33,7 @@ async function run() {
         const adoptionsCollection = client.db("petAdopton").collection("adoptions");
         const donationCollection = client.db("petAdopton").collection("donations");
         const myPetsCollection = client.db("petAdopton").collection("mePets");
-        const adoptionCollection = client.db("petAdopton").collection("adoption");
+
 
         // API: get all not adopted pets
         app.get("/pets", async (req, res) => {
@@ -51,7 +51,7 @@ async function run() {
         });
 
 
-        // ✅ route: GET /api/mypets?email=user@example.com
+        //  route: GET /api/mypets?email=user@example.com
         app.get("/mypets", async (req, res) => {
 
             try {
@@ -70,33 +70,6 @@ async function run() {
             }
         });
 
-        app.delete("/pets/:id", async (req, res) => {
-            try {
-                const id = req.params.id;
-                const result = await myPetsCollection.deleteOne({ _id: new ObjectId(id) });
-                res.send(result);
-            } catch (error) {
-                console.error("Failed to delete pet", error);
-                res.status(500).send({ message: "Failed to delete pet" });
-            }
-        });
-
-        // ✅ route: PATCH /api/pets/:id
-        app.patch('/api/pets/:id', async (req, res) => {
-            const id = req.params.id;
-            const updateDoc = {
-                $set: {
-                    adopted: true,
-                },
-            };
-
-            const result = await myPetsCollection.updateOne(
-                { _id: new ObjectId(id) },
-                updateDoc
-            );
-            res.send(result);
-        });
-
 
         app.get("/pets/:id", async (req, res) => {
             try {
@@ -111,24 +84,47 @@ async function run() {
             }
         });
 
-        // adoptionrequest
-        app.get("/api/adoption-requests", async (req, res) => {
-            const ownerEmail = req.query.ownerEmail;
-            const result = await adoptionCollection
-                .find({ petOwnerEmail: ownerEmail })
-                .toArray();
-            res.send(result);
+
+        // Get adoption requests for pets owned by this user
+        app.get("/api/adoption", async (req, res) => {
+            const userEmail = req.query.userEmail; // 
+            try {
+                const result = await adoptionsCollection
+                    .find({ petUserEmail: userEmail })
+                    .toArray();
+                res.send(result);
+            } catch (error) {
+                console.error("Failed to get adoption requests:", error);
+                res.status(500).send({ error: "Internal Server Error" });
+            }
+        });
+
+
+        // POST route: Save adoption form data
+        app.post("/api/adoptions", async (req, res) => {
+            const adoptions = req.body;
+
+            try {
+                const result = await adoptionsCollection.insertOne(adoptions);
+                res.status(201).send({
+                    message: "Adoption request submitted successfully!",
+                    insertedId: result.insertedId,
+                });
+            } catch (error) {
+                console.error("Failed to insert adoption request:", error);
+                res.status(500).send({ error: "Failed to submit adoption request" });
+            }
         });
 
         app.delete("/api/adoption-requests/:id/reject", async (req, res) => {
             const id = req.params.id;
-            const result = await adoptionCollection.deleteOne({ _id: new ObjectId(id) });
+            const result = await adoptionsCollection.deleteOne({ _id: new ObjectId(id) });
             res.send(result);
         });
 
         app.patch("/api/adoption-requests/:id/accept", async (req, res) => {
             const id = req.params.id;
-            const result = await adoptionCollection.updateOne(
+            const result = await adoptionsCollection.updateOne(
                 { _id: new ObjectId(id) },
                 { $set: { status: "accepted" } }
             );
@@ -162,14 +158,41 @@ async function run() {
                 res.status(500).json({ message: "Server error" });
             }
         });
+        app.get("/donations/:id", async (req, res) => {
+            try {
+                const page = parseInt(req.query.page) || 1;
+                const limit = parseInt(req.query.limit) || 6;
+                const skip = (page - 1) * limit;
+                const sort = req.query.sort === "desc" ? -1 : 1;
+
+                const total = await donationCollection.countDocuments();
+
+                const campaigns = await donationCollection
+                    .find()
+                    .sort({ createdAt: sort }) // latest first
+                    .skip(skip)
+                    .limit(limit)
+                    .toArray();
+
+                const hasMore = total > page * limit;
+
+                res.send({ campaigns, hasMore });
+            } catch (error) {
+                console.error("Error in /donations route:", error);
+                res.status(500).json({ message: "Server error" });
+            }
+        });
 
 
         // POST /donations route
         app.post("/donations", async (req, res) => {
-            const donation = req.body;
-            donation.createdAt = new Date();
-            const result = await donationCollection.insertOne(donation);
-            res.send(result);
+            try {
+                const donation = req.body;
+                const result = await donationCollection.insertOne(donation);
+                res.send(result); // contains insertedId
+            } catch (error) {
+                res.status(500).send({ error: "Failed to create donation" });
+            }
         });
 
         app.post("/pets", async (req, res) => {
@@ -205,21 +228,7 @@ async function run() {
             res.send(result);
         });
 
-        // POST route: Save adoption form data
-        app.post("/api/adoptions", async (req, res) => {
-            const adoptionData = req.body;
 
-            try {
-                const result = await adoptionsCollection.insertOne(adoptionData);
-                res.status(201).send({
-                    message: "Adoption request submitted successfully!",
-                    insertedId: result.insertedId,
-                });
-            } catch (error) {
-                console.error("Failed to insert adoption request:", error);
-                res.status(500).send({ error: "Failed to submit adoption request" });
-            }
-        });
 
 
         app.put('/pets/:id', async (req, res) => {
@@ -238,23 +247,42 @@ async function run() {
             }
         });
 
-        app.delete("/api/refund/:id", async (req, res) => {
+        app.delete("/api/pets/:id", async (req, res) => {
             const id = req.params.id;
 
+            if (!ObjectId.isValid(id)) {
+                return res.status(400).json({ message: "Invalid pet ID" });
+            }
+
             try {
-                const result = await donationCollection.deleteOne({ _id: new ObjectId(id) });
+                const result = await petsCollection.deleteOne({ _id: new ObjectId(id) });
 
                 if (result.deletedCount === 0) {
-                    return res.status(404).json({ message: "Donation not found" });
+                    return res.status(404).json({ message: "Pet not found" });
                 }
 
-                res.json({ message: "Donation deleted successfully" });
+                res.json({ deletedCount: result.deletedCount });
             } catch (err) {
-                console.error("Error deleting donation:", err);
+                console.error("Delete error:", err);
                 res.status(500).json({ message: "Internal server error" });
             }
         });
 
+        // ✅ route: PATCH /api/pets/:id
+        app.patch('/api/pets/:id', async (req, res) => {
+            const id = req.params.id;
+            const updateDoc = {
+                $set: {
+                    adopted: true,
+                },
+            };
+
+            const result = await myPetsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                updateDoc
+            );
+            res.send(result);
+        });
 
 
         // Send a ping to confirm a successful connection
