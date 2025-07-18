@@ -160,25 +160,18 @@ async function run() {
         });
         app.get("/donations/:id", async (req, res) => {
             try {
-                const page = parseInt(req.query.page) || 1;
-                const limit = parseInt(req.query.limit) || 6;
-                const skip = (page - 1) * limit;
-                const sort = req.query.sort === "desc" ? -1 : 1;
+                const id = req.params.id;
 
-                const total = await donationCollection.countDocuments();
+                // ✅ একক campaign খুঁজে বের করো
+                const campaign = await donationCollection.findOne({ _id: new ObjectId(id) });
 
-                const campaigns = await donationCollection
-                    .find()
-                    .sort({ createdAt: sort }) // latest first
-                    .skip(skip)
-                    .limit(limit)
-                    .toArray();
+                if (!campaign) {
+                    return res.status(404).json({ message: "Campaign not found" });
+                }
 
-                const hasMore = total > page * limit;
-
-                res.send({ campaigns, hasMore });
+                res.send(campaign);
             } catch (error) {
-                console.error("Error in /donations route:", error);
+                console.error("❌ Error in /donations/:id route:", error);
                 res.status(500).json({ message: "Server error" });
             }
         });
@@ -192,6 +185,30 @@ async function run() {
                 res.send(result); // contains insertedId
             } catch (error) {
                 res.status(500).send({ error: "Failed to create donation" });
+            }
+        });
+
+        app.patch("/donations/pause/:id", async (req, res) => {
+            const id = req.params.id;
+
+            if (!ObjectId.isValid(id)) {
+                return res.status(400).json({ message: "Invalid ID" });
+            }
+
+            try {
+                const result = await db.collection("donations").updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: { status: "paused" } }  // অথবা তোমার কাঙ্খিত ফিল্ড
+                );
+
+                if (result.modifiedCount === 0) {
+                    return res.status(404).json({ message: "Donation not found or already paused" });
+                }
+
+                res.json({ message: "Donation paused successfully" });
+            } catch (error) {
+                console.error("Pause donation error:", error);
+                res.status(500).json({ message: "Internal server error" });
             }
         });
 
