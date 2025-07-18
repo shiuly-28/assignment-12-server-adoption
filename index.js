@@ -84,6 +84,21 @@ async function run() {
             }
         });
 
+        app.delete("/api/refund/:id", async (req, res) => {
+            const id = req.params.id;
+            console.log("Refund API hit with ID:", id); // 🔍 এখানে দেখো ID ঠিক আছে কি না
+
+            try {
+                const result = await donationCollection.deleteOne({ _id: new ObjectId(id) });
+                console.log("Delete result:", result);
+                res.send(result);
+            } catch (error) {
+                console.error("Refund delete failed", error);
+                res.status(500).json({ message: "Delete failed" });
+            }
+        });
+
+
 
         // Get adoption requests for pets owned by this user
         app.get("/api/adoption", async (req, res) => {
