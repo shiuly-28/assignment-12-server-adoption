@@ -5,6 +5,8 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 dotenv.config();
 
+const stripe = require('stripe')(process.env.PAYMENT_GATE_KEY);
+
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -32,7 +34,7 @@ async function run() {
         const petsCollection = client.db("petAdopton").collection("pets");
         const adoptionsCollection = client.db("petAdopton").collection("adoptions");
         const donationCollection = client.db("petAdopton").collection("donations");
-        const myPetsCollection = client.db("petAdopton").collection("mePets");
+        const myPetsCollection = client.db("petAdopton").collection("pets");
 
 
         // API: get all not adopted pets
@@ -103,10 +105,13 @@ async function run() {
         // Get adoption requests for pets owned by this user
         app.get("/api/adoption", async (req, res) => {
             const userEmail = req.query.userEmail; // 
+
             try {
                 const result = await adoptionsCollection
-                    .find({ petUserEmail: userEmail })
+                    .find()
+                    // { email: userEmail }
                     .toArray();
+
                 res.send(result);
             } catch (error) {
                 console.error("Failed to get adoption requests:", error);
@@ -173,6 +178,7 @@ async function run() {
                 res.status(500).json({ message: "Server error" });
             }
         });
+
         app.get("/donations/:id", async (req, res) => {
             try {
                 const id = req.params.id;
@@ -196,6 +202,7 @@ async function run() {
         app.post("/donations", async (req, res) => {
             try {
                 const donation = req.body;
+                console.log(donation);
                 const result = await donationCollection.insertOne(donation);
                 res.send(result); // contains insertedId
             } catch (error) {
@@ -203,29 +210,60 @@ async function run() {
             }
         });
 
-        app.patch("/donations/pause/:id", async (req, res) => {
-            const id = req.params.id;
-
-            if (!ObjectId.isValid(id)) {
-                return res.status(400).json({ message: "Invalid ID" });
-            }
-
+        app.patch('/donations/pause/:id', async (req, res) => {
+            const { id } = req.params;
             try {
-                const result = await db.collection("donations").updateOne(
+                const result = await donationCollection.updateOne(
                     { _id: new ObjectId(id) },
-                    { $set: { status: "paused" } }  // অথবা তোমার কাঙ্খিত ফিল্ড
+                    { $set: { paused: true } }
                 );
 
-                if (result.modifiedCount === 0) {
-                    return res.status(404).json({ message: "Donation not found or already paused" });
+                if (result.modifiedCount > 0) {
+                    res.send({ message: 'Donation paused successfully' });
+                } else {
+                    res.status(404).send({ error: 'Donation not found' });
                 }
-
-                res.json({ message: "Donation paused successfully" });
-            } catch (error) {
-                console.error("Pause donation error:", error);
-                res.status(500).json({ message: "Internal server error" });
+            } catch (err) {
+                console.error("Pause error:", err);
+                res.status(500).send({ error: "Internal Server Error" });
             }
         });
+
+        app.get('/donations/donors/:id', async (req, res) => {
+            const { id } = req.params;
+
+            try {
+                const donors = await donationCollection
+                    .find({ campaignId: id })
+                    .project({ name: 1, email: 1, amount: 1, _id: 0 })
+                    .toArray();
+
+                res.send(donors);
+            } catch (error) {
+                console.error("Error fetching donors:", error);
+                res.status(500).send({ message: "Internal Server Error" });
+            }
+        });
+
+        // /payment/create-payment-intent
+        app.post("/payment/create-payment-intent", async (req, res) => {
+            const { amount } = req.body;
+
+            try {
+                const paymentIntent = await stripe.paymentIntents.create({
+                    amount: amount * 100, // Stripe accepts cents
+                    currency: "usd",
+                    payment_method_types: ["card"],
+                });
+
+                res.send({ clientSecret: paymentIntent.client_secret });
+            } catch (err) {
+                console.error("Stripe Error:", err.message);
+                res.status(500).send({ error: "Payment intent creation failed" });
+            }
+        });
+
+
 
         app.post("/pets", async (req, res) => {
             try {
@@ -303,6 +341,7 @@ async function run() {
         // ✅ route: PATCH /api/pets/:id
         app.patch('/api/pets/:id', async (req, res) => {
             const id = req.params.id;
+            console.log(id);
             const updateDoc = {
                 $set: {
                     adopted: true,
@@ -311,8 +350,10 @@ async function run() {
 
             const result = await myPetsCollection.updateOne(
                 { _id: new ObjectId(id) },
-                updateDoc
+                updateDoc, { upsert: true }
+
             );
+            console.log(result);
             res.send(result);
         });
 
