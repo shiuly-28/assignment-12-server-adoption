@@ -104,11 +104,15 @@ async function run() {
 
         // Get adoption requests for pets owned by this user
         app.get("/api/adoption", async (req, res) => {
+            let query = {}
             const userEmail = req.query.userEmail; // 
-
+            if (userEmail) {
+                query = { email: userEmail }
+            }
+            console.log(userEmail);
             try {
                 const result = await adoptionsCollection
-                    .find()
+                    .find(query)
                     // { email: userEmail }
                     .toArray();
 
@@ -182,8 +186,6 @@ async function run() {
         app.get("/donations/:id", async (req, res) => {
             try {
                 const id = req.params.id;
-
-                // ✅ একক campaign খুঁজে বের করো
                 const campaign = await donationCollection.findOne({ _id: new ObjectId(id) });
 
                 if (!campaign) {
@@ -210,24 +212,43 @@ async function run() {
             }
         });
 
-        app.patch('/donations/pause/:id', async (req, res) => {
+        app.get("/api/donations/:id", async (req, res) => {
             const { id } = req.params;
             try {
-                const result = await donationCollection.updateOne(
+                const donation = await donationCollection.findOne({ _id: new ObjectId(id) });
+                if (!donation) {
+                    return res.status(404).send({ message: "Donation not found" });
+                }
+                res.send(donation);
+            } catch (err) {
+                res.status(500).send({ error: "Failed to fetch donation" });
+            }
+        });
+
+
+        app.patch('/donations/toggle-pause/:id', async (req, res) => {
+            const { id } = req.params;
+
+            try {
+                const donation = await donationCollection.findOne({ _id: new ObjectId(id) });
+
+                if (!donation) {
+                    return res.status(404).send({ error: "Donation not found" });
+                }
+
+                const updated = await donationCollection.updateOne(
                     { _id: new ObjectId(id) },
-                    { $set: { paused: true } }
+                    { $set: { paused: !donation.paused } }
                 );
 
-                if (result.modifiedCount > 0) {
-                    res.send({ message: 'Donation paused successfully' });
-                } else {
-                    res.status(404).send({ error: 'Donation not found' });
-                }
+                const status = donation.paused ? "unpaused" : "paused";
+                res.send({ message: `Donation ${status} successfully.` });
             } catch (err) {
-                console.error("Pause error:", err);
+                console.error("Toggle pause error:", err);
                 res.status(500).send({ error: "Internal Server Error" });
             }
         });
+
 
         app.get('/donations/donors/:id', async (req, res) => {
             const { id } = req.params;
@@ -263,6 +284,18 @@ async function run() {
             }
         });
 
+        app.patch("/users/subscribe/:email", async (req, res) => {
+            const { email } = req.params;
+            try {
+                const result = await usersCollection.updateOne(
+                    { email },
+                    { $set: { subscribed: true } }
+                );
+                res.send({ success: true, result });
+            } catch (error) {
+                res.status(500).send({ error: 'Subscription failed' });
+            }
+        });
 
 
         app.post("/pets", async (req, res) => {
@@ -356,6 +389,32 @@ async function run() {
             console.log(result);
             res.send(result);
         });
+
+        app.get('/users/admin/:email', async (req, res) => {
+            const email = req.params.email;
+
+            try {
+                const user = await usersCollection.findOne({ email: email });
+
+                res.send({ isAdmin: user?.role === 'admin' });
+            } catch (error) {
+                res.status(500).send({ error: 'Internal server error' });
+            }
+        });
+
+        // app.post('/users', async (req, res) => {
+        //     const user = req.body;
+        //     const existingUser = await usersCollection.findOne({ email: user.email });
+
+        //     if (existingUser) {
+        //         return res.send({ message: 'User already exists' });
+        //     }
+
+        //     user.role = "user"; // default role
+        //     const result = await usersCollection.insertOne(user);
+        //     res.send(result);
+        // });
+
 
 
         // Send a ping to confirm a successful connection
