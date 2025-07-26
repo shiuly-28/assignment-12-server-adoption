@@ -33,25 +33,21 @@ async function run() {
         const usersCollection = client.db("petAdopton").collection("users");
         const petsCollection = client.db("petAdopton").collection("pets");
         const adoptionsCollection = client.db("petAdopton").collection("adoptions");
+        // const adoptionsCollection = client.db("petAdopton").collection("adoptionsCollection");
         const donationCollection = client.db("petAdopton").collection("donations");
+        const paymentsCollection = client.db("petAdopton").collection("payments");
         const myPetsCollection = client.db("petAdopton").collection("pets");
 
-
         // API: get all not adopted pets
-        app.get("/pets", async (req, res) => {
+        app.get("/donations/all", async (req, res) => {
             try {
-                const pets = await petsCollection
-                    .find({ adopted: false })
-                    .sort({ createdAt: -1 })
-                    .toArray();
-
-                res.send(pets);
-            } catch (err) {
-                console.error(err);
-                res.status(500).send({ message: "Failed to fetch pets" });
+                const result = await donationCollection.find().toArray();
+                res.send(result);
+            } catch (error) {
+                console.error("Error in /donations/all route:", error);
+                res.status(500).json({ message: "Server error" });
             }
         });
-
 
         //  route: GET /api/mypets?email=user@example.com
         app.get("/mypets", async (req, res) => {
@@ -73,55 +69,23 @@ async function run() {
         });
 
 
-        app.get("/pets/:id", async (req, res) => {
-            try {
-                const id = req.params.id
-                const pets = await petsCollection
-                    .findOne({ _id: new ObjectId(id) })
 
-                res.send(pets);
-            } catch (err) {
-                console.error(err);
-                res.status(500).send({ message: "Failed to fetch pets" });
-            }
-        });
 
-        app.delete("/api/refund/:id", async (req, res) => {
+        app.delete("/donations/:id", async (req, res) => {
             const id = req.params.id;
-            console.log("Refund API hit with ID:", id); // 🔍 এখানে দেখো ID ঠিক আছে কি না
-
             try {
                 const result = await donationCollection.deleteOne({ _id: new ObjectId(id) });
-                console.log("Delete result:", result);
                 res.send(result);
             } catch (error) {
-                console.error("Refund delete failed", error);
+                console.error("Donation delete failed", error);
                 res.status(500).json({ message: "Delete failed" });
             }
         });
 
-
-
-        // Get adoption requests for pets owned by this user
         app.get("/api/adoption", async (req, res) => {
-            let query = {}
-            const userEmail = req.query.userEmail; // 
-            if (userEmail) {
-                query = { email: userEmail }
-            }
-            console.log(userEmail);
-            try {
-                const result = await adoptionsCollection
-                    .find(query)
-                    // { email: userEmail }
-                    .toArray();
-
-                res.send(result);
-            } catch (error) {
-                console.error("Failed to get adoption requests:", error);
-                res.status(500).send({ error: "Internal Server Error" });
-            }
-        });
+            const request = await adoptionsCollection.find().toArray();
+            res.send(request);
+        })
 
 
         // POST route: Save adoption form data
@@ -140,9 +104,12 @@ async function run() {
             }
         });
 
-        app.delete("/api/adoption-requests/:id/reject", async (req, res) => {
+        app.patch("/api/adoption-requests/:id/reject", async (req, res) => {
             const id = req.params.id;
-            const result = await adoptionsCollection.deleteOne({ _id: new ObjectId(id) });
+            const result = await adoptionsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { status: "rejected" } }
+            );
             res.send(result);
         });
 
@@ -164,11 +131,22 @@ async function run() {
                 const limit = parseInt(req.query.limit) || 6;
                 const skip = (page - 1) * limit;
                 const sort = req.query.sort === "desc" ? -1 : 1;
+                const search = req.query.search || '';
 
-                const total = await donationCollection.countDocuments();
+                let query = {};
+                if (search) {
+                    query = {
+                        $or: [
+                            { name: { $regex: search, $options: 'i' } },
+                            { shortDescription: { $regex: search, $options: 'i' } },
+                        ],
+                    };
+                }
+
+                const total = await donationCollection.countDocuments(query);
 
                 const campaigns = await donationCollection
-                    .find()
+                    .find(query)
                     .sort({ createdAt: sort }) // latest first
                     .skip(skip)
                     .limit(limit)
@@ -176,7 +154,7 @@ async function run() {
 
                 const hasMore = total > page * limit;
 
-                res.send({ campaigns, hasMore });
+                res.send({ campaigns, hasMore, page, totalPages: Math.ceil(total / limit) });
             } catch (error) {
                 console.error("Error in /donations route:", error);
                 res.status(500).json({ message: "Server error" });
@@ -199,19 +177,6 @@ async function run() {
             }
         });
 
-
-        // POST /donations route
-        app.post("/donations", async (req, res) => {
-            try {
-                const donation = req.body;
-                console.log(donation);
-                const result = await donationCollection.insertOne(donation);
-                res.send(result); // contains insertedId
-            } catch (error) {
-                res.status(500).send({ error: "Failed to create donation" });
-            }
-        });
-
         app.get("/api/donations/:id", async (req, res) => {
             const { id } = req.params;
             try {
@@ -222,6 +187,33 @@ async function run() {
                 res.send(donation);
             } catch (err) {
                 res.status(500).send({ error: "Failed to fetch donation" });
+            }
+        });
+
+
+        // POST /donations route
+        app.post("/donations", async (req, res) => {
+            try {
+                const donation = req.body;
+                console.log(donation);
+                const result = await donationCollection.insertOne({ ...donation, totalDonated: 0 });
+                res.send(result); // contains insertedId
+            } catch (error) {
+                res.status(500).send({ error: "Failed to create donation" });
+            }
+        });
+
+        app.put('/api/donations/:id', async (req, res) => {
+            const { id } = req.params;
+            const updatedData = req.body;
+            try {
+                const result = await donationCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: updatedData }
+                );
+                res.send(result);
+            } catch (err) {
+                res.status(500).send({ error: "Update failed" });
             }
         });
 
@@ -250,23 +242,32 @@ async function run() {
         });
 
 
-        app.get('/donations/donors/:id', async (req, res) => {
+        app.get("/donations/donors/:id", async (req, res) => {
             const { id } = req.params;
-
             try {
-                const donors = await donationCollection
-                    .find({ campaignId: id })
-                    .project({ name: 1, email: 1, amount: 1, _id: 0 })
-                    .toArray();
-
+                const donors = await paymentsCollection.find({ campaignId: id }).toArray();
                 res.send(donors);
-            } catch (error) {
-                console.error("Error fetching donors:", error);
-                res.status(500).send({ message: "Internal Server Error" });
+            } catch (err) {
+                console.error("Error fetching donors:", err);
+                res.status(500).send({ message: "Failed to fetch donors" });
             }
         });
 
-        // /payment/create-payment-intent
+
+
+        app.post("/payments", async (req, res) => {
+            const payment = req.body;
+            const result = await paymentsCollection.insertOne(payment);
+
+            // Update totalDonated in donation campaign
+            const updateDoc = {
+                $inc: { totalDonated: payment.amount }
+            };
+            const filter = { _id: new ObjectId(payment.campaignId) };
+            const updatedDonation = await donationCollection.updateOne(filter, updateDoc);
+
+            res.send({ result, updatedDonation });
+        });
         app.post("/payment/create-payment-intent", async (req, res) => {
             const { amount } = req.body;
 
@@ -296,20 +297,17 @@ async function run() {
                 res.status(500).send({ error: 'Subscription failed' });
             }
         });
+        // ✅ Backend route
+        app.get('/users/:email/role', async (req, res) => {
+            const email = req.params.email;
+            console.log(email);
+            const user = await usersCollection.findOne({ email });
 
-
-        app.post("/pets", async (req, res) => {
-            try {
-                const pet = req.body;
-                pet.createdAt = new Date().toISOString();
-                pet.adopted = false;
-
-                const result = await petsCollection.insertOne(pet);
-                res.status(201).send({ message: "Pet added successfully", id: result.insertedId });
-            } catch (error) {
-                console.error("Failed to add pet:", error);
-                res.status(500).send({ message: "Failed to add pet" });
+            if (!user) {
+                return res.status(404).json({ error: 'User not found' });
             }
+
+            res.json({ role: user.role || 'user' });
         });
 
 
@@ -330,9 +328,80 @@ async function run() {
             const result = await usersCollection.insertOne(user);
             res.send(result);
         });
+        app.get("/pets", async (req, res) => {
+            try {
+                const page = parseInt(req.query.page) || 1;
+                const limit = parseInt(req.query.limit) || 6;
+                const skip = (page - 1) * limit;
+                const search = req.query.search || '';
 
+                let query = {};
+                if (search) {
+                    query = {
+                        $or: [
+                            { name: { $regex: search, $options: 'i' } },
+                            { location: { $regex: search, $options: 'i' } },
+                        ],
+                    };
+                }
 
+                const pets = await petsCollection
+                    .find(query)
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(limit)
+                    .toArray();
 
+                const total = await petsCollection.countDocuments(query);
+
+                res.send({
+                    pets,
+                    total,
+                    page,
+                    totalPages: Math.ceil(total / limit),
+                });
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: "Failed to fetch pets" });
+            }
+        });
+
+        app.get("/pets/:id", async (req, res) => {
+            try {
+                const id = req.params.id;
+                console.log("Received pet ID:", id);
+
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).send({ message: "Invalid Pet ID format" });
+                }
+
+                const pet = await petsCollection
+                    .findOne({ _id: new ObjectId(id) });
+
+                if (!pet) {
+                    return res.status(404).send({ message: "Pet not found" });
+                }
+
+                res.send(pet);
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: "Failed to fetch pet" });
+            }
+        });
+
+        app.post("/pets", async (req, res) => {
+            try {
+                const pet = req.body;
+                pet.createdAt = new Date().toISOString();
+                pet.adopted = false;
+
+                const result = await petsCollection.insertOne(pet);
+                res.status(201).send({ message: "Pet added successfully", id: result.insertedId });
+            } catch (error) {
+                console.error("Failed to add pet:", error);
+                res.status(500).send({ message: "Failed to add pet" });
+            }
+        });
 
         app.put('/pets/:id', async (req, res) => {
             const id = req.params.id;
@@ -389,6 +458,22 @@ async function run() {
             console.log(result);
             res.send(result);
         });
+        app.delete("/api/refund/:id", async (req, res) => {
+            const { id } = req.params;
+
+            try {
+                const result = await paymentsCollection.deleteOne({ _id: new ObjectId(id) });
+
+                if (result.deletedCount === 1) {
+                    res.send({ message: "Refund successful" });
+                } else {
+                    res.status(404).send({ message: "Donation not found" });
+                }
+            } catch (err) {
+                console.error("Refund error:", err);
+                res.status(500).send({ message: "Internal Server Error" });
+            }
+        });
 
         app.get('/users/admin/:email', async (req, res) => {
             const email = req.params.email;
@@ -402,20 +487,21 @@ async function run() {
             }
         });
 
-        // app.post('/users', async (req, res) => {
-        //     const user = req.body;
-        //     const existingUser = await usersCollection.findOne({ email: user.email });
+        app.get('/users', async (req, res) => {
+            const users = await usersCollection.find().toArray();
+            res.send(users);
+        });
 
-        //     if (existingUser) {
-        //         return res.send({ message: 'User already exists' });
-        //     }
-
-        //     user.role = "user"; // default role
-        //     const result = await usersCollection.insertOne(user);
-        //     res.send(result);
-        // });
-
-
+        app.patch('/users/admin/:id', async (req, res) => {
+            const id = req.params.id;
+            const user = await usersCollection.findOne({ _id: new ObjectId(id) });
+            const newRole = user.role === 'admin' ? 'user' : 'admin';
+            const result = await usersCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { role: newRole } }
+            );
+            res.send(result);
+        });
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
