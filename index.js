@@ -2,8 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const admin = require('firebase-admin');
 
 dotenv.config();
+const serviceAccount = require('./firebase-admin.json')
 
 const stripe = require('stripe')(process.env.PAYMENT_GATE_KEY);
 
@@ -14,6 +16,9 @@ const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@clustersheauly.6uz8dzi.mongodb.net/?retryWrites=true&w=majority&appName=ClusterSheauly`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -38,6 +43,32 @@ async function run() {
         const paymentsCollection = client.db("petAdopton").collection("payments");
         const myPetsCollection = client.db("petAdopton").collection("pets");
 
+        // custom middleware for jwt
+        const verifyFBToken = async (req, res, next) => {
+            console.log('header in the middleware', req.headers);
+            const authHeader = req.headers.authorization;
+            if (!authHeader) {
+                // console.log('authHeader',);
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+            const token = authHeader.split(' ')[1];
+            if (!token) {
+                // console.log("token not found");
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+            // verify the token from server
+            try {
+                const decoded = await admin.auth().verifyIdToken(token);
+                req.decoded = decoded;
+                console.log(req);
+                next()
+            }
+            catch (error) {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
+        };
+
+
         // API: get all not adopted pets
         app.get("/donations/all", async (req, res) => {
             try {
@@ -50,8 +81,8 @@ async function run() {
         });
 
         //  route: GET /api/mypets?email=user@example.com
-        app.get("/mypets", async (req, res) => {
-
+        app.get("/mypets", verifyFBToken, async (req, res) => {
+            // console.log("hello", req);
             try {
 
                 const email = req.query.email;
@@ -82,7 +113,7 @@ async function run() {
             }
         });
 
-        app.get("/api/adoption", async (req, res) => {
+        app.get("/api/adoption", verifyFBToken, async (req, res) => {
             const request = await adoptionsCollection.find().toArray();
             res.send(request);
         })
@@ -126,6 +157,7 @@ async function run() {
 
 
         app.get("/donations", async (req, res) => {
+            // console.log('headers in donation', req.headers);
             try {
                 const page = parseInt(req.query.page) || 1;
                 const limit = parseInt(req.query.limit) || 6;
@@ -244,13 +276,18 @@ async function run() {
 
         app.get("/donations/donors/:id", async (req, res) => {
             const { id } = req.params;
+            const query = { _id: new ObjectId(id) }
+            console.log(id);
             try {
-                const donors = await paymentsCollection.find({ campaignId: id }).toArray();
+
+                const donors = await donationCollection.findOne(query);
+                console.log(donors);
                 res.send(donors);
             } catch (err) {
                 console.error("Error fetching donors:", err);
                 res.status(500).send({ message: "Failed to fetch donors" });
             }
+
         });
 
 
