@@ -99,9 +99,6 @@ async function run() {
             }
         });
 
-
-
-
         app.delete("/donations/:id", async (req, res) => {
             const id = req.params.id;
             try {
@@ -156,7 +153,7 @@ async function run() {
         //  Get Donations with Pagination + Sort by Newest First
 
 
-        app.get("/donations", async (req, res) => {
+        app.get("/donations", verifyFBToken, async (req, res) => {
             // console.log('headers in donation', req.headers);
             try {
                 const page = parseInt(req.query.page) || 1;
@@ -272,8 +269,6 @@ async function run() {
                 res.status(500).send({ error: "Internal Server Error" });
             }
         });
-
-
         app.get("/donations/donors/:id", async (req, res) => {
             const { id } = req.params;
             const query = { _id: new ObjectId(id) }
@@ -289,9 +284,6 @@ async function run() {
             }
 
         });
-
-
-
         app.post("/payments", async (req, res) => {
             const payment = req.body;
             const result = await paymentsCollection.insertOne(payment);
@@ -310,7 +302,7 @@ async function run() {
 
             try {
                 const paymentIntent = await stripe.paymentIntents.create({
-                    amount: amount * 100, // Stripe accepts cents
+                    amount: amount * 100,
                     currency: "usd",
                     payment_method_types: ["card"],
                 });
@@ -334,7 +326,7 @@ async function run() {
                 res.status(500).send({ error: 'Subscription failed' });
             }
         });
-        // ✅ Backend route
+        //  Backend route
         app.get('/users/:email/role', async (req, res) => {
             const email = req.params.email;
             console.log(email);
@@ -349,7 +341,7 @@ async function run() {
 
 
         // post: Create a new parcel
-        app.post('/users', async (req, res) => {
+        app.post('/users', verifyFBToken, async (req, res) => {
             const email = req.body.email;
             const existingUser = await usersCollection.findOne({ email });
 
@@ -365,7 +357,7 @@ async function run() {
             const result = await usersCollection.insertOne(user);
             res.send(result);
         });
-        app.get("/pets", async (req, res) => {
+        app.get("/pets", verifyFBToken, async (req, res) => {
             try {
                 const page = parseInt(req.query.page) || 1;
                 const limit = parseInt(req.query.limit) || 6;
@@ -477,7 +469,7 @@ async function run() {
             }
         });
 
-        // ✅ route: PATCH /api/pets/:id
+        // route: PATCH /api/pets/:id
         app.patch('/api/pets/:id', async (req, res) => {
             const id = req.params.id;
             console.log(id);
