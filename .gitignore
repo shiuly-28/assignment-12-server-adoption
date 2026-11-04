@@ -1,4 +1,12 @@
 node_modules
-.env
 firebase-admin.json
 .vercel
+
+# Environment variables & secrets (added by GitHub Guardian)
+*.env
+!.env.example
+!.env.sample
+.envrc
+.venv/
+venv/
+config.bat
